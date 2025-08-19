@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>圃場ポリゴン登録（面積ha表示）</title>
+  <meta name="description" content="Google Maps上で圃場ポリゴンを描画し、面積(ha)を計算・保存するツール">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic UI', 'Yu Gothic', 'Meiryo', sans-serif; }
+    #map { height: 70vh; min-height: 480px; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+  <header class="border-b bg-white">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <h1 class="text-xl font-semibold">圃場ポリゴン登録（ha表示／GeoJSON保存）</h1>
+      <nav class="text-sm text-gray-500">
+        <a href="#" class="hover:text-gray-700"><i class="fa-solid fa-seedling mr-2"></i>北海道 100ha 管理補助</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <section class="lg:col-span-2 bg-white rounded-lg shadow border">
+      <div id="map" class="rounded-t-lg"></div>
+      <div class="p-4 text-sm text-gray-600 space-y-2">
+        <p>
+          使い方：
+          <span class="inline-block bg-green-100 text-green-800 px-2 py-0.5 rounded">ポリゴン</span>
+          ツールで圃場をクリックで頂点追加→ダブルクリックで確定。頂点ドラッグで編集可能。
+        </p>
+        <ul class="list-disc list-inside">
+          <li>面積はヘクタール(ha)のみ表示・保存</li>
+          <li>保存時にGeoJSON Polygonとして座標を保存（[lng, lat]）</li>
+        </ul>
+      </div>
+    </section>
+
+    <aside class="lg:col-span-1 space-y-4">
+      <section class="bg-white rounded-lg shadow border">
+        <div class="p-4 border-b">
+          <h2 class="font-semibold">圃場情報</h2>
+        </div>
+        <div class="p-4 space-y-3">
+          <input type="hidden" id="field-id" />
+          <div>
+            <label class="block text-sm text-gray-600 mb-1" for="field-name">圃場名</label>
+            <input id="field-name" class="w-full border rounded px-3 py-2" placeholder="例：第1西側" />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-sm text-gray-600 mb-1" for="field-year">年度</label>
+              <input id="field-year" type="number" class="w-full border rounded px-3 py-2" placeholder="2024" />
+            </div>
+            <div>
+              <label class="block text-sm text-gray-600 mb-1" for="field-crop">作物</label>
+              <input id="field-crop" class="w-full border rounded px-3 py-2" list="crops-datalist" placeholder="例：小麦" />
+              <datalist id="crops-datalist"></datalist>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-600 mb-1" for="field-variety">品種</label>
+            <input id="field-variety" class="w-full border rounded px-3 py-2" placeholder="例：ゆめちから" />
+          </div>
+          <div>
+            <label class="block text-sm text-gray-600 mb-1" for="field-memo">メモ</label>
+            <textarea id="field-memo" rows="3" class="w-full border rounded px-3 py-2" placeholder="任意"></textarea>
+          </div>
+          <div>
+            <label class="block text-sm text-gray-600 mb-1" for="field-area">面積(ha)</label>
+            <input id="field-area" class="w-full border rounded px-3 py-2 bg-gray-100" placeholder="ポリゴン作成で自動計算" disabled />
+          </div>
+          <div class="flex flex-wrap gap-2 pt-2">
+            <button id="btn-save-new" class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700"><i class="fa-solid fa-floppy-disk mr-2"></i>新規保存</button>
+            <button id="btn-save-update" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" disabled><i class="fa-solid fa-rotate mr-2"></i>更新保存</button>
+            <button id="btn-delete" class="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700" disabled><i class="fa-solid fa-trash mr-2"></i>削除</button>
+            <button id="btn-clear" class="px-3 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"><i class="fa-solid fa-eraser mr-2"></i>クリア</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-white rounded-lg shadow border">
+        <div class="p-4 border-b flex items-center justify-between">
+          <h2 class="font-semibold">登録済み圃場</h2>
+          <button id="btn-reload" class="text-sm text-gray-500 hover:text-gray-700"><i class="fa-solid fa-rotate-right mr-1"></i>再読込</button>
+        </div>
+        <div id="field-list" class="divide-y max-h-[40vh] overflow-auto" aria-live="polite"></div>
+      </section>
+
+      <section class="bg-white rounded-lg shadow border">
+        <div class="p-4 border-b flex items-center justify-between">
+          <h2 class="font-semibold">衛星NDVI（最新）</h2>
+          <button id="btn-load-ndvi" class="text-sm text-gray-500 hover:text-gray-700"><i class="fa-solid fa-satellite mr-1"></i>更新</button>
+        </div>
+        <div class="p-4">
+          <div id="ndvi-meta" class="text-xs text-gray-500 mb-2"></div>
+          <div id="ndvi-map" class="w-full h-72 bg-gray-100 text-gray-400">圃場を選択すると表示</div>
+          <div id="ndvi-links" class="mt-2 text-xs text-blue-600 space-x-4"></div>
+        </div>
+      </section>
+
+      <section class="bg-white rounded-lg shadow border">
+        <div class="p-4">
+          <h2 class="font-semibold mb-2">APIキー設定</h2>
+          <p class="text-sm text-gray-600">js/config.js の <code>googleMapsApiKey</code> に API キーを設定してください。</p>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.loader.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
