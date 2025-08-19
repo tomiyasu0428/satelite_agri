@@ -42,11 +42,42 @@
     </section>
 
     <aside class="lg:col-span-1 space-y-4">
+      <!-- 衛星NDVI（最新）を最上部へ移動 -->
       <section class="bg-white rounded-lg shadow border">
-        <div class="p-4 border-b">
-          <h2 class="font-semibold">圃場情報</h2>
+        <div class="p-4 border-b flex items-center justify-between">
+          <h2 class="font-semibold">衛星NDVI（最新）</h2>
+          <button id="btn-load-ndvi" class="text-sm text-gray-500 hover:text-gray-700"><i class="fa-solid fa-satellite mr-1"></i>更新</button>
         </div>
-        <div class="p-4 space-y-3">
+        <div class="p-4" id="ndvi-content">
+          <div id="ndvi-meta" class="text-xs text-gray-500 mb-2"></div>
+          <div id="ndvi-map" class="w-full h-72 bg-gray-100 text-gray-400">圃場を選択すると表示</div>
+          <div id="ndvi-links" class="mt-2 text-xs text-blue-600 space-x-4"></div>
+          
+          <!-- NDVI統計値表示 -->
+          <div id="ndvi-stats" class="mt-4 p-3 bg-gray-50 rounded hidden">
+            <h4 class="font-semibold mb-2">NDVI数値統計</h4>
+            <div class="grid grid-cols-2 gap-2 text-sm">
+              <div><strong>平均値:</strong> <span id="ndvi-mean">-</span></div>
+              <div><strong>中央値:</strong> <span id="ndvi-median">-</span></div>
+              <div><strong>最小値:</strong> <span id="ndvi-min">-</span></div>
+              <div><strong>最大値:</strong> <span id="ndvi-max">-</span></div>
+              <div><strong>標準偏差:</strong> <span id="ndvi-std">-</span></div>
+              <div><strong>ピクセル数:</strong> <span id="ndvi-count">-</span></div>
+            </div>
+            <div class="mt-2">
+              <div><strong>植生健康度:</strong> <span id="ndvi-health" class="px-2 py-1 rounded text-white">-</span></div>
+            </div>
+            <button id="ndvi-export" class="mt-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">CSV出力</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-white rounded-lg shadow border">
+        <div class="p-4 border-b flex items-center justify-between">
+          <h2 class="font-semibold">圃場情報</h2>
+          <button id="toggle-field-form" class="text-sm text-gray-500 hover:text-gray-700"><i class="fa-solid fa-chevron-up"></i></button>
+        </div>
+        <div id="field-form-content" class="p-4 space-y-3">
           <input type="hidden" id="field-id" />
           <div>
             <label class="block text-sm text-gray-600 mb-1" for="field-name">圃場名</label>
@@ -87,37 +118,13 @@
       <section class="bg-white rounded-lg shadow border">
         <div class="p-4 border-b flex items-center justify-between">
           <h2 class="font-semibold">登録済み圃場</h2>
-          <button id="btn-reload" class="text-sm text-gray-500 hover:text-gray-700"><i class="fa-solid fa-rotate-right mr-1"></i>再読込</button>
-        </div>
-        <div id="field-list" class="divide-y max-h-[40vh] overflow-auto" aria-live="polite"></div>
-      </section>
-
-      <section class="bg-white rounded-lg shadow border">
-        <div class="p-4 border-b flex items-center justify-between">
-          <h2 class="font-semibold">衛星NDVI（最新）</h2>
-          <button id="btn-load-ndvi" class="text-sm text-gray-500 hover:text-gray-700"><i class="fa-solid fa-satellite mr-1"></i>更新</button>
-        </div>
-        <div class="p-4">
-          <div id="ndvi-meta" class="text-xs text-gray-500 mb-2"></div>
-          <div id="ndvi-map" class="w-full h-72 bg-gray-100 text-gray-400">圃場を選択すると表示</div>
-          <div id="ndvi-links" class="mt-2 text-xs text-blue-600 space-x-4"></div>
-          
-          <!-- NDVI統計値表示 -->
-          <div id="ndvi-stats" class="mt-4 p-3 bg-gray-50 rounded hidden">
-            <h4 class="font-semibold mb-2">NDVI数値統計</h4>
-            <div class="grid grid-cols-2 gap-2 text-sm">
-              <div><strong>平均値:</strong> <span id="ndvi-mean">-</span></div>
-              <div><strong>中央値:</strong> <span id="ndvi-median">-</span></div>
-              <div><strong>最小値:</strong> <span id="ndvi-min">-</span></div>
-              <div><strong>最大値:</strong> <span id="ndvi-max">-</span></div>
-              <div><strong>標準偏差:</strong> <span id="ndvi-std">-</span></div>
-              <div><strong>ピクセル数:</strong> <span id="ndvi-count">-</span></div>
-            </div>
-            <div class="mt-2">
-              <div><strong>植生健康度:</strong> <span id="ndvi-health" class="px-2 py-1 rounded text-white">-</span></div>
-            </div>
-            <button id="ndvi-export" class="mt-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">CSV出力</button>
+          <div class="space-x-2">
+            <button id="btn-reload" class="text-sm text-gray-500 hover:text-gray-700"><i class="fa-solid fa-rotate-right mr-1"></i>再読込</button>
+            <button id="toggle-field-list" class="text-sm text-gray-500 hover:text-gray-700"><i class="fa-solid fa-chevron-up"></i></button>
           </div>
+        </div>
+        <div id="field-list-content" class="max-h-[40vh] overflow-auto">
+          <div id="field-list" class="divide-y" aria-live="polite"></div>
         </div>
       </section>
 

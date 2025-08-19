@@ -233,7 +233,7 @@ app.get('/api/s2/ndvi/latest', async (req, res) => {
       }
     } catch {}
     const bbox = `${minLng},${minLat},${maxLng},${maxLat}`;
-    const common = `url=${encodeURIComponent(itemUrl)}&assets=nir,red&asset_as_band=true&expression=${expr}&rescale=-1,1&colormap_name=viridis&resampling=nearest`;
+    const common = `url=${encodeURIComponent(itemUrl)}&assets=nir,red&asset_as_band=true&expression=${expr}&rescale=-1,1&colormap_name=rdylgn&resampling=nearest`;
     const tile = `${TITILER_URL}/stac/tiles/WebMercatorQuad/{z}/{x}/{y}.png?${common}`;
     const preview = `${TITILER_URL}/stac/bbox/${bbox}/768x768.png?${common}`;
 
@@ -456,7 +456,7 @@ app.get('/api/s2/preview.png', async (req, res) => {
 
     // titiler へ（NDVI）
     const expr = encodeURIComponent('(nir-red)/(nir+red)');
-    const common = `url=${encodeURIComponent(itemUrl)}&assets=nir,red&asset_as_band=true&expression=${expr}&rescale=-1,1&colormap_name=viridis&resampling=nearest`;
+    const common = `url=${encodeURIComponent(itemUrl)}&assets=nir,red&asset_as_band=true&expression=${expr}&rescale=-1,1&colormap_name=rdylgn&resampling=nearest`;
     const previewUrl = `${TITILER_URL}/stac/bbox/${minLng},${minLat},${maxLng},${maxLat}/${size}x${size}.png?${common}`;
 
     const imgRes = await fetch(previewUrl);

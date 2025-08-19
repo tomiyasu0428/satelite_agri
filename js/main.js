@@ -167,7 +167,7 @@ async function loadLatestNdviTile(fieldId, fieldGeoJson) {
         asset_as_band: 'true',
         expression: '(nir-red)/(nir+red)',
         rescale: '-1,1',
-        colormap_name: 'viridis',
+        colormap_name: 'rdylgn',
         resampling: 'bilinear'
       }).toString();
       const imgUrl = `${titilerBase}/stac/bbox/${bbox}/2048x2048.png?${params}`;
@@ -503,6 +503,32 @@ function bindUI() {
     const fid = getRecordId(selectedRecord);
     if (fid) loadLatestNdviTile(fid);
   });
+
+  // 折り畳み（圃場情報）
+  const toggleFieldForm = document.getElementById('toggle-field-form');
+  const fieldFormContent = document.getElementById('field-form-content');
+  if (toggleFieldForm && fieldFormContent) {
+    toggleFieldForm.addEventListener('click', () => {
+      const hidden = fieldFormContent.classList.toggle('hidden');
+      try {
+        const i = toggleFieldForm.querySelector('i');
+        if (i) i.className = `fa-solid ${hidden ? 'fa-chevron-down' : 'fa-chevron-up'}`;
+      } catch {}
+    });
+  }
+
+  // 折り畳み（登録済み圃場一覧）
+  const toggleFieldList = document.getElementById('toggle-field-list');
+  const fieldListContent = document.getElementById('field-list-content');
+  if (toggleFieldList && fieldListContent) {
+    toggleFieldList.addEventListener('click', () => {
+      const hidden = fieldListContent.classList.toggle('hidden');
+      try {
+        const i = toggleFieldList.querySelector('i');
+        if (i) i.className = `fa-solid ${hidden ? 'fa-chevron-down' : 'fa-chevron-up'}`;
+      } catch {}
+    });
+  }
 }
 
 async function populateCropDatalist() {
