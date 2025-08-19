@@ -101,6 +101,23 @@
           <div id="ndvi-meta" class="text-xs text-gray-500 mb-2"></div>
           <div id="ndvi-map" class="w-full h-72 bg-gray-100 text-gray-400">圃場を選択すると表示</div>
           <div id="ndvi-links" class="mt-2 text-xs text-blue-600 space-x-4"></div>
+          
+          <!-- NDVI統計値表示 -->
+          <div id="ndvi-stats" class="mt-4 p-3 bg-gray-50 rounded hidden">
+            <h4 class="font-semibold mb-2">NDVI数値統計</h4>
+            <div class="grid grid-cols-2 gap-2 text-sm">
+              <div><strong>平均値:</strong> <span id="ndvi-mean">-</span></div>
+              <div><strong>中央値:</strong> <span id="ndvi-median">-</span></div>
+              <div><strong>最小値:</strong> <span id="ndvi-min">-</span></div>
+              <div><strong>最大値:</strong> <span id="ndvi-max">-</span></div>
+              <div><strong>標準偏差:</strong> <span id="ndvi-std">-</span></div>
+              <div><strong>ピクセル数:</strong> <span id="ndvi-count">-</span></div>
+            </div>
+            <div class="mt-2">
+              <div><strong>植生健康度:</strong> <span id="ndvi-health" class="px-2 py-1 rounded text-white">-</span></div>
+            </div>
+            <button id="ndvi-export" class="mt-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">CSV出力</button>
+          </div>
         </div>
       </section>
 

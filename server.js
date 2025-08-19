@@ -252,6 +252,152 @@ app.get('/api/s2/ndvi/latest', async (req, res) => {
   }
 });
 
+// NDVI統計値取得エンドポイント（mean, median, std, min, max, histogram）
+app.get('/api/s2/ndvi/stats', async (req, res) => {
+  try {
+    const fieldId = (req.query.field_id || req.query.id || '').toString();
+    if (!ObjectId.isValid(fieldId)) return res.status(400).json({ error: 'invalid_field_id' });
+    
+    await client.connect();
+    const field = await client.db(dbName).collection('fields').findOne({ _id: new ObjectId(fieldId) });
+    if (!field || !field.geometry) return res.status(404).json({ error: 'field_not_found' });
+
+    // 最新のSTACアイテムを取得（既存ロジック再利用）
+    const qDays = Math.min(parseInt(req.query.days) || 10, 120);
+    const qCloud = Math.min(parseInt(req.query.cloud) || 70, 100);
+
+    async function searchScene(days, cloud) {
+      const to = new Date();
+      const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const stacBody = {
+        collections: ['sentinel-2-l2a'],
+        datetime: `${from.toISOString()}/${to.toISOString()}`,
+        intersects: field.geometry,
+        query: { 'eo:cloud_cover': { lte: cloud } },
+        limit: 1,
+        sortby: [{ field: 'properties.datetime', direction: 'desc' }]
+      };
+      const r = await fetch('https://earth-search.aws.element84.com/v1/search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(stacBody)
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const j = await r.json();
+      return j.features && j.features[0] ? j.features[0] : null;
+    }
+
+    const attempts = [
+      [qDays, qCloud],
+      [Math.max(20, qDays * 3), Math.max(qCloud, 80)],
+      [60, 90]
+    ];
+
+    let item = null;
+    for (const [d, c] of attempts) {
+      item = await searchScene(d, c);
+      if (item) break;
+    }
+    if (!item) {
+      return res.status(404).json({ error: 'no_scene_found' });
+    }
+
+    const selfLink = (item.links || []).find(l => l.rel === 'self')?.href || null;
+    const itemUrl = selfLink || `https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/${encodeURIComponent(item.id)}`;
+
+    // 圃場のBBox
+    let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90;
+    try {
+      const ring = field.geometry?.coordinates?.[0] || [];
+      for (const [lng, lat] of ring) {
+        if (lng < minLng) minLng = lng; if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+      }
+    } catch {}
+    const bbox = `${minLng},${minLat},${maxLng},${maxLat}`;
+
+    // TiTilerのstatisticsエンドポイントを使用してNDVI統計値を取得（圃場ポリゴンでクリップ）
+    const statsParams = new URLSearchParams({
+      url: itemUrl,
+      assets: 'nir,red',
+      asset_as_band: 'true',
+      expression: '(nir-red)/(nir+red)',
+      categorical: 'false',
+      histogram: 'true'
+    });
+
+    const statsUrl = `${TITILER_URL}/stac/statistics?${statsParams}`;
+    const statsBody = { type: 'Feature', properties: {}, geometry: field.geometry };
+    let statsResponse = await fetch(statsUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(statsBody)
+    });
+    // POSTが受け付けられない場合のフォールバック（GET + geojson=）
+    if (!statsResponse.ok) {
+      const fallbackUrl = `${statsUrl}&geojson=${encodeURIComponent(JSON.stringify(statsBody))}`;
+      statsResponse = await fetch(fallbackUrl);
+    }
+    
+    if (!statsResponse.ok) {
+      const errorText = await statsResponse.text();
+      return res.status(500).json({ error: 'stats_failed', message: errorText });
+    }
+
+    const statsData = await statsResponse.json();
+
+    // レスポンス形式を吸収しつつ統計本体を抽出
+    let ndviStats = null;
+    if (statsData && typeof statsData === 'object') {
+      // TiTiler典型: { type: 'Feature', properties: { statistics: { '(nir-red)/(nir+red)': {...} } } }
+      if (statsData.properties && statsData.properties.statistics) {
+        const s = statsData.properties.statistics;
+        const firstKey = Object.keys(s)[0];
+        ndviStats = s['(nir-red)/(nir+red)'] || s.expression || s.ndvi || s.b1 || (firstKey ? s[firstKey] : null);
+      }
+      // 別形
+      if (!ndviStats && statsData.statistics && typeof statsData.statistics === 'object') {
+        const s = statsData.statistics;
+        const firstKey = Object.keys(s)[0];
+        ndviStats = s.expression || s.ndvi || s.b1 || (firstKey ? s[firstKey] : null);
+      }
+      if (!ndviStats) {
+        // 平坦 or 他名
+        ndviStats = statsData.expression || statsData.stats || null;
+      }
+      if (!ndviStats && statsData.mean !== undefined) {
+        ndviStats = statsData; // 既に平坦
+      }
+    }
+
+    // プロパティ名差異の吸収（stddevなど）
+    const stdValue = ndviStats ? (ndviStats.std ?? ndviStats.stdev ?? ndviStats.stddev ?? null) : null;
+    const result = {
+      field_id: fieldId,
+      datetime: item.properties?.datetime || null,
+      cloud_cover: item.properties?.['eo:cloud_cover'] ?? null,
+      ndvi_statistics: {
+        mean: ndviStats ? (ndviStats.mean ?? ndviStats.avg ?? null) : null,
+        median: ndviStats ? (ndviStats.median ?? ndviStats.p50 ?? null) : null,
+        std: stdValue,
+        min: ndviStats ? (ndviStats.min ?? ndviStats.p0 ?? null) : null,
+        max: ndviStats ? (ndviStats.max ?? ndviStats.p100 ?? null) : null,
+        count: ndviStats ? (ndviStats.count ?? ndviStats.n ?? null) : null,
+        histogram: ndviStats ? (ndviStats.histogram ?? ndviStats.histogram_bins ?? null) : null
+      },
+      interpretation: {
+        vegetation_health: (ndviStats?.mean ?? 0) > 0.6 ? 'excellent' : 
+                          (ndviStats?.mean ?? 0) > 0.4 ? 'good' : 
+                          (ndviStats?.mean ?? 0) > 0.2 ? 'poor' : 'very_poor',
+        coverage_percentage: ndviStats?.mean != null ? Math.round(((ndviStats.mean + 1) * 50)) : null
+      }
+    };
+
+    res.json(result);
+  } catch (e) {
+    console.error('ndvi stats error:', e);
+    res.status(500).json({ error: 'ndvi_stats_failed', message: e.message });
+  }
+});
+
 // サーバ側プロキシ: 圃場ごとのNDVIプレビューPNGを返す
 app.get('/api/s2/preview.png', async (req, res) => {
   try {

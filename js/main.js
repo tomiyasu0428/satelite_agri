@@ -145,6 +145,9 @@ async function loadLatestNdviTile(fieldId, fieldGeoJson) {
     `;
     if (window.__NDVI_MAP__) { try { window.__NDVI_MAP__.remove(); } catch {} window.__NDVI_MAP__ = null; }
 
+    // NDVI統計値を取得・表示
+    await loadNdviStatistics(fieldId);
+
     // Google MapsにNDVIのグラウンドオーバーレイを重ねる（半透明）
     try {
       // 圃場BBox
@@ -251,6 +254,94 @@ async function loadLatestNdviTile(fieldId, fieldGeoJson) {
     const el = document.getElementById('ndvi-map');
     el.textContent = 'NDVIの取得に失敗しました: ' + (e?.message || 'unknown');
   }
+}
+
+// NDVI統計値取得・表示機能
+async function loadNdviStatistics(fieldId) {
+  try {
+    const base = (window.APP_CONFIG && window.APP_CONFIG.externalApiBase) || '/api';
+    const res = await fetch(`${base}/s2/ndvi/stats?field_id=${encodeURIComponent(fieldId)}`);
+    
+    const statsDiv = document.getElementById('ndvi-stats');
+    if (!res.ok) {
+      statsDiv.classList.add('hidden');
+      return;
+    }
+    
+    const stats = await res.json();
+    const ndvi = stats.ndvi_statistics;
+    
+    // 統計値を表示
+    document.getElementById('ndvi-mean').textContent = ndvi.mean ? ndvi.mean.toFixed(3) : '-';
+    document.getElementById('ndvi-median').textContent = ndvi.median ? ndvi.median.toFixed(3) : '-';
+    document.getElementById('ndvi-min').textContent = ndvi.min ? ndvi.min.toFixed(3) : '-';
+    document.getElementById('ndvi-max').textContent = ndvi.max ? ndvi.max.toFixed(3) : '-';
+    document.getElementById('ndvi-std').textContent = ndvi.std ? ndvi.std.toFixed(3) : '-';
+    document.getElementById('ndvi-count').textContent = ndvi.count || '-';
+    
+    // 植生健康度の表示
+    const healthEl = document.getElementById('ndvi-health');
+    const health = stats.interpretation.vegetation_health;
+    healthEl.textContent = health === 'excellent' ? '優秀' :
+                          health === 'good' ? '良好' :
+                          health === 'poor' ? '不良' :
+                          health === 'very_poor' ? '非常に不良' : '-';
+    
+    // 健康度による色分け
+    healthEl.className = 'px-2 py-1 rounded text-white ' + 
+      (health === 'excellent' ? 'bg-green-600' :
+       health === 'good' ? 'bg-green-400' :
+       health === 'poor' ? 'bg-yellow-500' :
+       health === 'very_poor' ? 'bg-red-500' : 'bg-gray-400');
+    
+    // CSV出力ボタンの設定
+    const exportBtn = document.getElementById('ndvi-export');
+    exportBtn.onclick = () => exportNdviCsv(stats);
+    
+    // 統計パネルを表示
+    statsDiv.classList.remove('hidden');
+    
+    // グローバルに保存（他の機能で使用可能）
+    window.__CURRENT_NDVI_STATS__ = stats;
+    
+  } catch (e) {
+    console.error('NDVI statistics error:', e);
+    document.getElementById('ndvi-stats').classList.add('hidden');
+  }
+}
+
+// NDVI統計値をCSVで出力
+function exportNdviCsv(stats) {
+  const field = window.__SELECTED_FIELD__;
+  const fieldName = field ? (field.圃場名 || field.field_name || `Field_${field._id}`) : 'Unknown';
+  
+  const csvData = [
+    ['項目', '値'],
+    ['圃場名', fieldName],
+    ['取得日', stats.datetime || '-'],
+    ['雲量 (%)', stats.cloud_cover || '-'],
+    ['NDVI平均値', stats.ndvi_statistics.mean || '-'],
+    ['NDVI中央値', stats.ndvi_statistics.median || '-'],
+    ['NDVI最小値', stats.ndvi_statistics.min || '-'],
+    ['NDVI最大値', stats.ndvi_statistics.max || '-'],
+    ['NDVI標準偏差', stats.ndvi_statistics.std || '-'],
+    ['ピクセル数', stats.ndvi_statistics.count || '-'],
+    ['植生健康度', stats.interpretation.vegetation_health || '-'],
+    ['植生被覆率 (%)', stats.interpretation.coverage_percentage || '-']
+  ];
+  
+  const csvContent = csvData.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `NDVI_統計_${fieldName}_${new Date().toISOString().split('T')[0]}.csv`);
+  link.style.visibility = 'hidden';
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 function getRecordId(rec) {
