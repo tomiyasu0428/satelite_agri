@@ -111,3 +111,69 @@ curl -X POST http://localhost:3000/api/s2/stats.simple \
 ---
 
 このドキュメントの手順で「地図で選ぶ→最新NDVIを見る」だけを最短で実現できます。
+
+## 別プロジェクトとしての最小アプリ構成とデプロイ手順
+
+目的: 地図でエリアを選択→最新のSentinel‑2 NDVIを表示するだけの極小アプリを、誰でもすぐデプロイ可能にする。
+
+1) 推奨構成（APIキー不要にするならLeaflet）
+- web: Leaflet + OSMベースマップ（index.html だけでも可）
+- api: 本リポの DBなし簡易API（`POST /api/s2/preview.simple`, `POST /api/s2/stats.simple`）を転用
+- titiler: NDVI計算用（コンテナ推奨）
+
+2) ディレクトリひな型
+```
+simple-s2-viewer/
+├─ web/
+│  └─ index.html        # Leafletでポリゴン描画→fetchでAPI呼び出し
+├─ api/
+│  └─ server.js         # 本リポのsimple API部分を抜粋
+└─ docker-compose.yml   # api + titiler をまとめて起動
+```
+
+3) api/server.js の要点
+- 必須環境変数: `PORT`（例: 3000）, `TITILER_URL`（例: http://titiler:8000）, `ALLOWED_ORIGINS`（例: * またはデプロイドメイン）
+- 実装エンドポイント:
+  - `POST /api/s2/preview.simple` → PNGを返す
+  - `POST /api/s2/stats.simple` → 統計JSONを返す
+- DBは一切不要。受け取ったGeoJSON FeatureのgeometryをそのままTiTilerへ渡す
+
+4) docker-compose.yml の例
+```yaml
+version: "3.8"
+services:
+  api:
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - ./api:/app
+    command: node server.js
+    environment:
+      - PORT=3000
+      - TITILER_URL=http://titiler:8000
+      - ALLOWED_ORIGINS=*
+    ports:
+      - "3000:3000"
+    depends_on:
+      - titiler
+  titiler:
+    image: ghcr.io/developmentseed/titiler:latest
+    ports:
+      - "8000:8000"
+```
+
+5) web/index.html の要点
+- Leafletでポリゴンを描画し、Feature GeoJSONを作成
+- 画像表示: `fetch('/api/s2/preview.simple', { method:'POST', body: JSON.stringify(feature) })` のレスポンスをBlob→`URL.createObjectURL`で<img>に表示
+- 統計表示: `fetch('/api/s2/stats.simple', ...)` のJSONを整形して表示
+
+6) デプロイ先の例
+- まとめてDocker対応のPaaS: Render, Fly.io, Railway（Composeをそのまま使えると簡単）
+- 分離構成: APIをCloud Run/Render、webをNetlify/Vercel、TiTilerを別コンテナで公開（`TITILER_URL`をその公開URLに）
+
+7) 運用メモ
+- CORS: `ALLOWED_ORIGINS`に本番ドメインを設定
+- 画像キャッシュ: プレビュー応答ヘッダはno-cache。必要に応じCDNで短期キャッシュ
+- コスト最小化: Leaflet + OSMを使えばマップAPIキー不要。Google Mapsを使う場合はキーを環境変数で読み込み
+
+このセクションのとおり、DBなしAPI + TiTiler + 最小フロントの3点で、独立した閲覧用アプリを即座にデプロイできます。
