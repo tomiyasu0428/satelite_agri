@@ -2,7 +2,7 @@ name: NDVI Ingest (Scheduled)
 
 on:
   schedule:
-    - cron: '0 18 * * *' # JST 03:00 相当（GitHub ActionsはUTC）
+    - cron: '0 18 */5 * *' # 5日ごと JST 03:00 相当（GitHub ActionsはUTC）
   workflow_dispatch:
 
 jobs:
