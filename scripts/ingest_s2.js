@@ -71,6 +71,8 @@ async function fetchNdviStatsForGeometry(itemUrl, geometry) {
 }
 
 async function ingestOneField(field) {
+  // サーバから呼ばれる場合に備え、毎回connect()は安全（再利用）
+  await client.connect();
   const days = 10;
   const cloud = 70;
   const attempts = [ [days, cloud], [Math.max(20, days*3), Math.max(cloud, 80)], [60, 90] ];
