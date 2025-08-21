@@ -1,0 +1,32 @@
+name: NDVI Ingest (Scheduled)
+
+on:
+  schedule:
+    - cron: '0 18 * * *' # JST 03:00 相当（GitHub ActionsはUTC）
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create .env
+        run: |
+          cat << 'EOF' > .env
+          MONGODB_URI=${{ secrets.MONGODB_URI }}
+          MONGODB_DATABASE=${{ secrets.MONGODB_DATABASE }}
+          TITILER_URL=${{ secrets.TITILER_URL }}
+          EOF
+
+      - name: Run ingest script
+        run: node scripts/ingest_s2.js

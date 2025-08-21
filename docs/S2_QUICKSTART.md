@@ -57,18 +57,23 @@ npm run dev
   - A. `TITILER_URL` が正しいか、TiTilerコンテナが起動しているか確認してください。
 
 ## 運用（任意）
-- 定期取得（バッチ蓄積）を有効化するには `.env` に以下を追記し、サーバを再起動：
+- サーバ常駐での定期取得（現在の実装）:
+  - `.env` に以下を追記して再起動
 ```bash
 CRON_ENABLED=true
 CRON_SCHEDULE=0 3 * * *
 CRON_TZ=Asia/Tokyo
 ADMIN_TOKEN=任意の強固な文字列
 ```
-- 手動トリガ（管理API）：
+  - 手動トリガ（管理API）
 ```bash
 curl -X POST http://localhost:3000/api/admin/ingest/s2 \
   -H "X-Admin-Token: あなたのADMIN_TOKEN"
 ```
+- サーバ不要の定期取得（GitHub Actions）:
+  - リポジトリ Secrets に `MONGODB_URI`, `MONGODB_DATABASE`, `TITILER_URL` を登録
+  - `.github/workflows/ingest.yml` が毎日JST 3時に `node scripts/ingest_s2.js` を実行
+  - 手動実行はGitHubの「Run workflow」から可能
 - 保存先コレクション：`s2_ndvi_timeseries`
 
 ## DBなしの超簡易版（実装済み）
