@@ -477,6 +477,182 @@ app.get('/api/s2/preview.png', async (req, res) => {
   }
 });
 
+// ========== DBなし簡易モード: GeoJSONを直接受け取りNDVI取得 ==========
+// 1) プレビュー画像（PNG）
+app.post('/api/s2/preview.simple', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const feature = body.type === 'Feature' ? body : (body.feature || null);
+    const geometry = feature?.geometry || body.geometry;
+    const days = Math.min(parseInt(body.days) || 10, 120);
+    const cloud = Math.min(parseInt(body.cloud) || 70, 100);
+    const size = Math.max(256, Math.min(parseInt(body.size) || 768, 2048));
+    let itemUrl = (body.item_url || '').toString();
+
+    if (!geometry || !geometry.type || !Array.isArray(geometry.coordinates)) {
+      return res.status(400).json({ error: 'invalid_geometry' });
+    }
+
+    async function searchScene(g, daysArg, cloudArg) {
+      const to = new Date();
+      const from = new Date(Date.now() - daysArg * 24 * 60 * 60 * 1000);
+      const stacBody = {
+        collections: ['sentinel-2-l2a'],
+        datetime: `${from.toISOString()}/${to.toISOString()}`,
+        intersects: g,
+        query: { 'eo:cloud_cover': { lte: cloudArg } },
+        limit: 1,
+        sortby: [{ field: 'properties.datetime', direction: 'desc' }]
+      };
+      const r = await fetch('https://earth-search.aws.element84.com/v1/search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(stacBody)
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const j = await r.json();
+      const it = j.features && j.features[0];
+      if (!it) return null;
+      const selfLink = (it.links || []).find(l => l.rel === 'self')?.href || null;
+      return selfLink || `https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/${encodeURIComponent(it.id)}`;
+    }
+
+    if (!itemUrl) {
+      const attempts = [ [days, cloud], [Math.max(20, days*3), Math.max(cloud, 80)], [60, 90] ];
+      for (const [d, c] of attempts) {
+        itemUrl = await searchScene(geometry, d, c);
+        if (itemUrl) break;
+      }
+      if (!itemUrl) return res.status(404).json({ error: 'no_scene_found' });
+    }
+
+    // BBox from geometry
+    let minLng = 180, minLat = 90, maxLng = -180, maxLat = -90;
+    try {
+      const ring = geometry?.coordinates?.[0] || [];
+      for (const [lng, lat] of ring) {
+        if (lng < minLng) minLng = lng; if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+      }
+    } catch {}
+
+    const expr = encodeURIComponent('(nir-red)/(nir+red)');
+    const common = `url=${encodeURIComponent(itemUrl)}&assets=nir,red&asset_as_band=true&expression=${expr}&rescale=-1,1&colormap_name=rdylgn&resampling=nearest`;
+    const previewUrl = `${TITILER_URL}/stac/bbox/${minLng},${minLat},${maxLng},${maxLat}/${size}x${size}.png?${common}`;
+
+    const imgRes = await fetch(previewUrl);
+    if (!imgRes.ok) {
+      const txt = await imgRes.text();
+      return res.status(502).json({ error: 'titiler_failed', detail: txt, previewUrl });
+    }
+    const ab = await imgRes.arrayBuffer();
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.send(Buffer.from(ab));
+  } catch (e) {
+    console.error('preview.simple error:', e);
+    res.status(500).json({ error: 'preview_simple_failed', message: e.message });
+  }
+});
+
+// 2) 統計（JSON）
+app.post('/api/s2/stats.simple', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const feature = body.type === 'Feature' ? body : (body.feature || null);
+    const geometry = feature?.geometry || body.geometry;
+    const days = Math.min(parseInt(body.days) || 10, 120);
+    const cloud = Math.min(parseInt(body.cloud) || 70, 100);
+    let itemUrl = (body.item_url || '').toString();
+
+    if (!geometry || !geometry.type || !Array.isArray(geometry.coordinates)) {
+      return res.status(400).json({ error: 'invalid_geometry' });
+    }
+
+    async function searchScene(g, daysArg, cloudArg) {
+      const to = new Date();
+      const from = new Date(Date.now() - daysArg * 24 * 60 * 60 * 1000);
+      const stacBody = {
+        collections: ['sentinel-2-l2a'],
+        datetime: `${from.toISOString()}/${to.toISOString()}`,
+        intersects: g,
+        query: { 'eo:cloud_cover': { lte: cloudArg } },
+        limit: 1,
+        sortby: [{ field: 'properties.datetime', direction: 'desc' }]
+      };
+      const r = await fetch('https://earth-search.aws.element84.com/v1/search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(stacBody)
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const j = await r.json();
+      const it = j.features && j.features[0];
+      if (!it) return null;
+      const selfLink = (it.links || []).find(l => l.rel === 'self')?.href || null;
+      return selfLink || `https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/${encodeURIComponent(it.id)}`;
+    }
+
+    if (!itemUrl) {
+      const attempts = [ [days, cloud], [Math.max(20, days*3), Math.max(cloud, 80)], [60, 90] ];
+      for (const [d, c] of attempts) {
+        itemUrl = await searchScene(geometry, d, c);
+        if (itemUrl) break;
+      }
+      if (!itemUrl) return res.status(404).json({ error: 'no_scene_found' });
+    }
+
+    const params = new URLSearchParams({
+      url: itemUrl,
+      assets: 'nir,red',
+      asset_as_band: 'true',
+      expression: '(nir-red)/(nir+red)',
+      categorical: 'false',
+      histogram: 'true'
+    });
+    const statsUrl = `${TITILER_URL}/stac/statistics?${params}`;
+    const statsBody = { type: 'Feature', properties: {}, geometry };
+    let statsResponse = await fetch(statsUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(statsBody) });
+    if (!statsResponse.ok) {
+      const fallbackUrl = `${statsUrl}&geojson=${encodeURIComponent(JSON.stringify(statsBody))}`;
+      statsResponse = await fetch(fallbackUrl);
+    }
+    if (!statsResponse.ok) {
+      const errorText = await statsResponse.text();
+      return res.status(502).json({ error: 'stats_failed', message: errorText });
+    }
+
+    const statsData = await statsResponse.json();
+    let ndviStats = null;
+    if (statsData && typeof statsData === 'object') {
+      if (statsData.properties && statsData.properties.statistics) {
+        const s = statsData.properties.statistics;
+        const firstKey = Object.keys(s)[0];
+        ndviStats = s['(nir-red)/(nir+red)'] || s.expression || s.ndvi || s.b1 || (firstKey ? s[firstKey] : null);
+      }
+      if (!ndviStats && statsData.statistics && typeof statsData.statistics === 'object') {
+        const s = statsData.statistics;
+        const firstKey = Object.keys(s)[0];
+        ndviStats = s.expression || s.ndvi || s.b1 || (firstKey ? s[firstKey] : null);
+      }
+      if (!ndviStats) ndviStats = statsData.expression || statsData.stats || (statsData.mean !== undefined ? statsData : null);
+    }
+
+    const stdValue = ndviStats ? (ndviStats.std ?? ndviStats.stdev ?? ndviStats.stddev ?? null) : null;
+    res.json({
+      stac_item_url: itemUrl,
+      ndvi_statistics: {
+        mean: ndviStats ? (ndviStats.mean ?? ndviStats.avg ?? null) : null,
+        median: ndviStats ? (ndviStats.median ?? ndviStats.p50 ?? null) : null,
+        std: stdValue,
+        min: ndviStats ? (ndviStats.min ?? ndviStats.p0 ?? null) : null,
+        max: ndviStats ? (ndviStats.max ?? ndviStats.p100 ?? null) : null,
+        count: ndviStats ? (ndviStats.count ?? ndviStats.n ?? null) : null,
+        histogram: ndviStats ? (ndviStats.histogram ?? ndviStats.histogram_bins ?? null) : null
+      }
+    });
+  } catch (e) {
+    console.error('stats.simple error:', e);
+    res.status(500).json({ error: 'stats_simple_failed', message: e.message });
+  }
+});
 // ヘルスチェックエンドポイント
 app.get('/api/health', (req, res) => {
   res.json({ 
