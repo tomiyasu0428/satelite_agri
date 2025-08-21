@@ -2,6 +2,8 @@ import express from 'express';
 import { MongoClient, ObjectId } from 'mongodb';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import cron from 'node-cron';
+import { ingestOneField } from './scripts/ingest_s2.js';
 
 // 環境変数を読み込み
 dotenv.config();
@@ -797,3 +799,60 @@ process.on('SIGINT', async () => {
 });
 
 startServer().catch(console.error);
+
+// ============== NDVI定期インジェスト（オプション） ==============
+// 環境変数 CRON_ENABLED=true の場合、CRON_SCHEDULE（デフォルト: 毎日3時）で実行
+const enableCron = (process.env.CRON_ENABLED || 'false').toLowerCase() === 'true';
+const cronExpr = process.env.CRON_SCHEDULE || '0 3 * * *';
+
+async function ingestAllFieldsOnce() {
+  try {
+    await client.connect();
+    const fields = await client.db(dbName).collection('fields').find({ deleted: { $ne: true } }).toArray();
+    let ok = 0, skip = 0, fail = 0;
+    for (const field of fields) {
+      try {
+        const r = await ingestOneField(field);
+        if (r.status === 'ingested') ok++; else if (r.status === 'skipped') skip++; else fail++;
+        console.log(`[cron ingest] ${field.name || field._id}:`, r);
+        await new Promise(res => setTimeout(res, 500));
+      } catch (e) {
+        fail++;
+        console.error(`[cron ingest] ${field.name || field._id} failed:`, e.message);
+      }
+    }
+    console.log(`[cron ingest] done. ingested=${ok}, skipped=${skip}, failed=${fail}`);
+  } catch (e) {
+    console.error('[cron ingest] error:', e);
+  }
+}
+
+if (enableCron) {
+  try {
+    cron.schedule(cronExpr, () => {
+      console.log(`[cron] start NDVI ingest at ${new Date().toISOString()}`);
+      ingestAllFieldsOnce().catch(e => console.error('[cron] failed:', e));
+    }, { timezone: process.env.CRON_TZ || 'Asia/Tokyo' });
+    console.log(`[cron] scheduled: ${cronExpr} (TZ=${process.env.CRON_TZ || 'Asia/Tokyo'})`);
+  } catch (e) {
+    console.error('[cron] schedule failed:', e.message);
+  }
+}
+
+// 管理API: 手動実行（要 X-Admin-Token）
+app.post('/api/admin/ingest/s2', async (req, res) => {
+  try {
+    const token = req.header('X-Admin-Token') || '';
+    const required = process.env.ADMIN_TOKEN || '';
+    if (!required || token !== required) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    ingestAllFieldsOnce().then(() => {
+      res.json({ ok: true, started: true });
+    }).catch(e => {
+      res.status(500).json({ ok: false, error: e.message });
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'admin_ingest_failed', message: e.message });
+  }
+});
