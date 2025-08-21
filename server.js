@@ -131,20 +131,18 @@ app.delete('/api/crops/:id', async (req, res) => {
 // MongoDB接続設定
 const mongoUri = process.env.MONGODB_URI;
 const dbName = process.env.MONGODB_DATABASE || 'Agri-AI-Project';
-
-if (!mongoUri) {
-  console.error('MONGODB_URIが設定されていません。.envファイルを確認してください。');
-  process.exit(1);
-}
-
-const client = new MongoClient(mongoUri);
+const DB_ENABLED = !!mongoUri;
+const client = DB_ENABLED ? new MongoClient(mongoUri) : null;
 
 // データベース接続確認
 async function connectToDatabase() {
   try {
+    if (!DB_ENABLED) {
+      console.log('MongoDB無効モードで起動（DB不要のエンドポイントのみ利用可能）');
+      return;
+    }
     await client.connect();
     console.log('MongoDB接続成功');
-    // 接続テスト
     await client.db(dbName).admin().ping();
     console.log(`データベース '${dbName}' に正常に接続しました`);
   } catch (error) {

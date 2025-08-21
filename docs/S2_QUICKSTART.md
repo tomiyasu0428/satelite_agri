@@ -8,7 +8,7 @@
 - Node.js 18+
 - Google Maps APIキー
 - TiTiler（NDVI計算用）。Docker推奨
-- MongoDB（Atlasの無料枠でOK）
+- MongoDB（任意。DBなしモードでも可）
 
 ## 1. リポジトリを取得
 ```bash
@@ -18,8 +18,9 @@ cd satelite_agri
 
 ## 2. .env を用意（プロジェクト直下）
 ```bash
-MONGODB_URI=あなたのMongo接続文字列
-MONGODB_DATABASE=Agri-AI-Project
+# （DBなしモードの場合は MONGODB_* を未設定のままでOK）
+# MONGODB_URI=あなたのMongo接続文字列
+# MONGODB_DATABASE=Agri-AI-Project
 GOOGLE_MAPS_API_KEY=あなたのAPIキー
 PORT=3000
 NODE_ENV=development
