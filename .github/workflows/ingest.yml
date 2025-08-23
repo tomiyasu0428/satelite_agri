@@ -29,5 +29,17 @@ jobs:
           TITILER_URL=${{ secrets.TITILER_URL }}
           EOF
 
+      - name: Validate env (no secret values printed)
+        run: |
+          source .env || true
+          missing=()
+          [[ -z "$MONGODB_URI" ]] && missing+=("MONGODB_URI")
+          [[ -z "$MONGODB_DATABASE" ]] && missing+=("MONGODB_DATABASE")
+          [[ -z "$TITILER_URL" ]] && missing+=("TITILER_URL")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing secrets: ${missing[*]}"
+            exit 1
+          fi
+
       - name: Run ingest script
         run: node scripts/ingest_s2.js
