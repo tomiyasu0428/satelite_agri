@@ -8,7 +8,6 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { MongoClient, ObjectId } from 'mongodb';
-const TITILER_URL = process.env.TITILER_URL || 'http://localhost:8000';
 
 async function fetchNdviStatsViaTitiler(stacItemUrl, geometry) {
   if (!stacItemUrl || !geometry) return null;
@@ -51,6 +50,9 @@ const __dirname = path.dirname(__filename);
 
 // .env を読み込む（ローカル実行時）
 dotenv.config();
+
+// dotenv読込後に評価する
+const TITILER_URL = process.env.TITILER_URL || 'http://localhost:8000';
 
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
