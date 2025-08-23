@@ -32,13 +32,16 @@ async function fetchLatestNdviByField(db) {
     { $sort: { dt: -1 } },
     { $group: { _id: '$field_id', doc: { $first: '$$ROOT' } } },
     { $replaceRoot: { newRoot: '$doc' } },
-    { $sort: { dt: -1 } }
+    { $sort: { dt: -1 } },
+    { $lookup: { from: 'fields', localField: 'field_id', foreignField: '_id', as: 'field' } },
+    { $addFields: { field: { $first: '$field' } } }
   ];
   return await coll.aggregate(pipeline).toArray();
 }
 
 function normalizeDoc(r) {
   const fieldId = (r.field_id && r.field_id.toString) ? r.field_id.toString() : (r.field_id ?? '');
+  const fieldName = r.field?.name || '';
   const datetime = r.item?.datetime || r.datetime || r.dt || null;
   const cloud = r.item?.cloud_cover ?? r.cloud_cover ?? null;
   const stacId = r.item?.id || r.stac_item_id || null;
@@ -48,19 +51,20 @@ function normalizeDoc(r) {
   const min = ndvi?.min ?? ndvi?.p0 ?? null;
   const max = ndvi?.max ?? ndvi?.p100 ?? null;
   const std = ndvi?.std ?? ndvi?.stdev ?? ndvi?.stddev ?? null;
-  const count = ndvi?.count ?? ndvi?.n ?? null;
-  return { field_id: fieldId, item: { datetime, cloud_cover: cloud, id: stacId }, ndvi: { mean, median, min, max, std, count } };
+  const count = ndvi?.count ?? ndvi?.n ?? ndvi?.valid_pixels ?? null;
+  return { field_id: fieldId, field_name: fieldName, item: { datetime, cloud_cover: cloud, id: stacId }, ndvi: { mean, median, min, max, std, count } };
 }
 
 function toCsv(rows) {
   const header = [
-    'field_id','datetime','cloud_cover','mean','median','min','max','std','count','stac_item_id'
+    'field_id','field_name','datetime','cloud_cover','mean','median','min','max','std','count','stac_item_id'
   ];
   const lines = [header.join(',')];
   for (const raw of rows) {
     const r = normalizeDoc(raw);
     const f = [
       r.field_id,
+      r.field_name,
       r.item?.datetime ?? '',
       r.item?.cloud_cover ?? '',
       formatNumber(r.ndvi?.mean),
@@ -77,12 +81,12 @@ function toCsv(rows) {
 }
 
 function toMarkdown(rows) {
-  const th = '| 圃場ID | 取得日時 | 雲量% | 平均 | 中央 | 最小 | 最大 | 標準偏差 | ピクセル数 | STAC |\n|---|---|---:|---:|---:|---:|---:|---:|---:|---|';
+  const th = '| 圃場ID | 名称 | 取得日時 | 雲量% | 平均 | 中央 | 最小 | 最大 | 標準偏差 | ピクセル数 | STAC |\n|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|';
   const lines = [th];
   for (const raw of rows) {
     const r = normalizeDoc(raw);
     lines.push(
-      `| ${r.field_id} | ${r.item?.datetime ?? ''} | ${formatNumber(r.item?.cloud_cover ?? null, 1)} | ${formatNumber(r.ndvi?.mean)} | ${formatNumber(r.ndvi?.median)} | ${formatNumber(r.ndvi?.min)} | ${formatNumber(r.ndvi?.max)} | ${formatNumber(r.ndvi?.std)} | ${r.ndvi?.count ?? ''} | ${r.item?.id ?? ''} |`
+      `| ${r.field_id} | ${r.field_name || '-'} | ${r.item?.datetime ?? ''} | ${formatNumber(r.item?.cloud_cover ?? null, 1)} | ${formatNumber(r.ndvi?.mean)} | ${formatNumber(r.ndvi?.median)} | ${formatNumber(r.ndvi?.min)} | ${formatNumber(r.ndvi?.max)} | ${formatNumber(r.ndvi?.std)} | ${r.ndvi?.count ?? ''} | ${r.item?.id ?? ''} |`
     );
   }
   return lines.join('\n');
