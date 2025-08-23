@@ -42,4 +42,8 @@ jobs:
           fi
 
       - name: Run ingest script
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DATABASE: ${{ secrets.MONGODB_DATABASE }}
+          TITILER_URL: ${{ secrets.TITILER_URL }}
         run: node scripts/ingest_s2.js
