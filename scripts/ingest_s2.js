@@ -59,13 +59,20 @@ async function fetchNdviStatsForGeometry(itemUrl, geometry) {
   if (!resp.ok) throw new Error(await resp.text());
   const statsData = await resp.json();
 
-  // 統計本体抽出（titilerのレスポンス形式に依存）
+  // レスポンス互換抽出
   let ndvi = null;
   if (statsData && typeof statsData === 'object') {
-    // { statistics: { "(nir-red)/(nir+red)": { ... } } } or 直接 {...}
-    const byKey = statsData.statistics || statsData;
-    const key = Object.keys(byKey)[0];
-    ndvi = byKey[key];
+    if (statsData.properties?.statistics) {
+      const s = statsData.properties.statistics;
+      const firstKey = Object.keys(s)[0];
+      ndvi = s['(nir-red)/(nir+red)'] || s.expression || s.ndvi || s.b1 || (firstKey ? s[firstKey] : null);
+    }
+    if (!ndvi && statsData.statistics && typeof statsData.statistics === 'object') {
+      const s = statsData.statistics; const firstKey = Object.keys(s)[0];
+      ndvi = s.expression || s.ndvi || s.b1 || (firstKey ? s[firstKey] : null);
+    }
+    if (!ndvi) ndvi = statsData.expression || statsData.stats || null;
+    if (!ndvi && statsData.mean !== undefined) ndvi = statsData;
   }
   return ndvi;
 }
@@ -92,7 +99,15 @@ async function ingestOneField(field) {
   const exists = await col.findOne({ field_id: field._id, stac_item_id: item.id });
   if (exists) return { status: 'skipped', reason: 'already_ingested', stac_item_id: item.id };
 
-  const ndviStats = await fetchNdviStatsForGeometry(itemUrl, field.geometry);
+  let ndviStats = await fetchNdviStatsForGeometry(itemUrl, field.geometry);
+  // 予防: nullだったら表層バッファを当てて再試行
+  if (!ndviStats) {
+    try {
+      const buffered = JSON.parse(JSON.stringify(field.geometry));
+      // 非厳密: bbox縮小などはせず、そのまま2回目（TiTiler側の一過性対策）
+      ndviStats = await fetchNdviStatsForGeometry(itemUrl, buffered);
+    } catch {}
+  }
   if (!ndviStats) return { status: 'failed', reason: 'stats_null' };
 
   const doc = {
