@@ -53,6 +53,7 @@ dotenv.config();
 
 // dotenv読込後に評価する
 const TITILER_URL = process.env.TITILER_URL || 'http://localhost:8000';
+const SERVER_BASE = process.env.REPORT_SERVER_BASE || process.env.SERVER_BASE || 'http://localhost:3000';
 
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
@@ -162,7 +163,7 @@ function toHtml(rows) {
     const label = b.name || b.id; // 名前があればIDは表示しない
     const meta = [b.date || null, (b.cloud!=null ? `雲量: ${formatNumber(b.cloud,1)}%` : null)].filter(Boolean).join(' · ');
     const ts = Date.now();
-    const imgSrc = `/api/s2/preview.png?field_id=${encodeURIComponent(b.id)}&size=512&_=${ts}`;
+    const imgSrc = `${SERVER_BASE}/api/s2/preview.png?field_id=${encodeURIComponent(b.id)}&size=512&_=${ts}`;
     return `<div style="display:flex;align-items:center;gap:12px;margin:12px 0;">
       <img src="${imgSrc}" alt="NDVI preview" style="width:160px;height:160px;object-fit:contain;border:1px solid #eee;border-radius:6px;"/>
       <div style="flex:1;display:flex;align-items:center;gap:8px;">
