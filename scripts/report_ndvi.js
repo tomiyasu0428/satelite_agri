@@ -26,17 +26,30 @@ function formatNumber(value, digits = 3) {
 
 async function fetchLatestNdviByField(db) {
   const coll = db.collection('s2_ndvi_timeseries');
-  // 各圃場で最新日時の1件を取得
+  // 各圃場で最新日時の1件を取得（item.datetime または datetime のどちらでも対応）
   const pipeline = [
-    { $sort: { 'item.datetime': -1 } },
-    { $group: {
-        _id: '$field_id',
-        doc: { $first: '$$ROOT' }
-    }},
+    { $addFields: { dt: { $ifNull: ['$item.datetime', '$datetime'] } } },
+    { $sort: { dt: -1 } },
+    { $group: { _id: '$field_id', doc: { $first: '$$ROOT' } } },
     { $replaceRoot: { newRoot: '$doc' } },
-    { $sort: { 'item.datetime': -1 } }
+    { $sort: { dt: -1 } }
   ];
   return await coll.aggregate(pipeline).toArray();
+}
+
+function normalizeDoc(r) {
+  const fieldId = (r.field_id && r.field_id.toString) ? r.field_id.toString() : (r.field_id ?? '');
+  const datetime = r.item?.datetime || r.datetime || r.dt || null;
+  const cloud = r.item?.cloud_cover ?? r.cloud_cover ?? null;
+  const stacId = r.item?.id || r.stac_item_id || null;
+  const ndvi = r.ndvi || r.ndvi_statistics || r.statistics || r.stats || null;
+  const mean = ndvi?.mean ?? ndvi?.avg ?? null;
+  const median = ndvi?.median ?? ndvi?.p50 ?? null;
+  const min = ndvi?.min ?? ndvi?.p0 ?? null;
+  const max = ndvi?.max ?? ndvi?.p100 ?? null;
+  const std = ndvi?.std ?? ndvi?.stdev ?? ndvi?.stddev ?? null;
+  const count = ndvi?.count ?? ndvi?.n ?? null;
+  return { field_id: fieldId, item: { datetime, cloud_cover: cloud, id: stacId }, ndvi: { mean, median, min, max, std, count } };
 }
 
 function toCsv(rows) {
@@ -44,7 +57,8 @@ function toCsv(rows) {
     'field_id','datetime','cloud_cover','mean','median','min','max','std','count','stac_item_id'
   ];
   const lines = [header.join(',')];
-  for (const r of rows) {
+  for (const raw of rows) {
+    const r = normalizeDoc(raw);
     const f = [
       r.field_id,
       r.item?.datetime ?? '',
@@ -65,7 +79,8 @@ function toCsv(rows) {
 function toMarkdown(rows) {
   const th = '| 圃場ID | 取得日時 | 雲量% | 平均 | 中央 | 最小 | 最大 | 標準偏差 | ピクセル数 | STAC |\n|---|---|---:|---:|---:|---:|---:|---:|---:|---|';
   const lines = [th];
-  for (const r of rows) {
+  for (const raw of rows) {
+    const r = normalizeDoc(raw);
     lines.push(
       `| ${r.field_id} | ${r.item?.datetime ?? ''} | ${formatNumber(r.item?.cloud_cover ?? null, 1)} | ${formatNumber(r.ndvi?.mean)} | ${formatNumber(r.ndvi?.median)} | ${formatNumber(r.ndvi?.min)} | ${formatNumber(r.ndvi?.max)} | ${formatNumber(r.ndvi?.std)} | ${r.ndvi?.count ?? ''} | ${r.item?.id ?? ''} |`
     );
@@ -75,7 +90,10 @@ function toMarkdown(rows) {
 
 function toHtml(rows) {
   // シンプルなインライン棒グラフ（mean のみ）
-  const bars = rows.map(r => ({ id: r.field_id, mean: Number(r.ndvi?.mean ?? 0) }));
+  const bars = rows.map(raw => {
+    const r = normalizeDoc(raw);
+    return { id: r.field_id, mean: Number(r.ndvi?.mean ?? 0) };
+  });
   const max = Math.max(0.0001, ...bars.map(b => Math.abs(b.mean)));
   const items = bars.map(b => {
     const w = Math.round((Math.abs(b.mean) / max) * 300);
