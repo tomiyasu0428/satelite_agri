@@ -133,14 +133,15 @@ function toHtml(rows) {
   // シンプルなインライン棒グラフ（mean のみ）
   const bars = rows.map(raw => {
     const r = normalizeDoc(raw);
-    return { id: r.field_id, mean: Number(r.ndvi?.mean ?? 0) };
+    return { id: r.field_id, name: r.field_name || '', mean: Number(r.ndvi?.mean ?? 0) };
   });
   const max = Math.max(0.0001, ...bars.map(b => Math.abs(b.mean)));
   const items = bars.map(b => {
     const w = Math.round((Math.abs(b.mean) / max) * 300);
     const color = b.mean >= 0.4 ? '#2e7d32' : b.mean >= 0.2 ? '#f9a825' : '#e53935';
+    const label = b.name ? `${b.name} (${b.id})` : b.id;
     return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
-      <code style="min-width: 220px;">${b.id}</code>
+      <code style="min-width: 320px;">${label}</code>
       <div style="background:#eee;width:320px;height:10px;position:relative;">
         <div style="background:${color};height:10px;width:${w}px;"></div>
       </div>
