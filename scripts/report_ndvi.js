@@ -8,6 +8,43 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { MongoClient, ObjectId } from 'mongodb';
+const TITILER_URL = process.env.TITILER_URL || 'http://localhost:8000';
+
+async function fetchNdviStatsViaTitiler(stacItemUrl, geometry) {
+  if (!stacItemUrl || !geometry) return null;
+  const params = new URLSearchParams({
+    url: stacItemUrl,
+    assets: 'nir,red',
+    asset_as_band: 'true',
+    expression: '(nir-red)/(nir+red)',
+    categorical: 'false',
+    histogram: 'true'
+  });
+  const statsUrl = `${TITILER_URL}/stac/statistics?${params.toString()}`;
+  const body = { type: 'Feature', properties: {}, geometry };
+  let resp = await fetch(statsUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!resp.ok) {
+    const fallback = `${statsUrl}&geojson=${encodeURIComponent(JSON.stringify(body))}`;
+    resp = await fetch(fallback);
+  }
+  if (!resp.ok) return null;
+  const statsData = await resp.json();
+  let ndvi = null;
+  if (statsData && typeof statsData === 'object') {
+    if (statsData.properties?.statistics) {
+      const s = statsData.properties.statistics;
+      const firstKey = Object.keys(s)[0];
+      ndvi = s['(nir-red)/(nir+red)'] || s.expression || s.ndvi || s.b1 || (firstKey ? s[firstKey] : null);
+    }
+    if (!ndvi && statsData.statistics && typeof statsData.statistics === 'object') {
+      const s = statsData.statistics; const firstKey = Object.keys(s)[0];
+      ndvi = s.expression || s.ndvi || s.b1 || (firstKey ? s[firstKey] : null);
+    }
+    if (!ndvi) ndvi = statsData.expression || statsData.stats || null;
+    if (!ndvi && statsData.mean !== undefined) ndvi = statsData;
+  }
+  return ndvi;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -130,6 +167,26 @@ async function main() {
   try {
     const db = client.db(dbName);
     const rows = await fetchLatestNdviByField(db);
+
+    // 値が欠損している場合は TiTiler でオンデマンド計算
+    for (const r of rows) {
+      const hasMean = !!(r?.ndvi?.mean ?? r?.ndvi_statistics?.mean);
+      if (hasMean) continue;
+      const stacUrl = r.stac_item_url || (r.item?.id ? `https://earth-search.aws.element84.com/v1/collections/sentinel-2-l2a/items/${encodeURIComponent(r.item.id)}` : null);
+      const geom = r.field?.geometry || null;
+      try {
+        const ndvi = await fetchNdviStatsViaTitiler(stacUrl, geom);
+        if (ndvi) {
+          r.ndvi = r.ndvi || {};
+          r.ndvi.mean = ndvi.mean ?? r.ndvi.mean;
+          r.ndvi.median = ndvi.median ?? r.ndvi.median;
+          r.ndvi.min = ndvi.min ?? r.ndvi.min;
+          r.ndvi.max = ndvi.max ?? r.ndvi.max;
+          r.ndvi.std = ndvi.stdev ?? ndvi.std ?? r.ndvi.std;
+          r.ndvi.count = ndvi.count ?? ndvi.n ?? r.ndvi.count;
+        }
+      } catch {}
+    }
 
     const reportsDir = path.join(__dirname, '..', 'reports');
     ensureDir(reportsDir);
