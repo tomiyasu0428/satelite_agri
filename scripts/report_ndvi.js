@@ -161,15 +161,20 @@ function toHtml(rows) {
     const color = b.mean >= 0.4 ? '#2e7d32' : b.mean >= 0.2 ? '#f9a825' : '#e53935';
     const label = b.name || b.id; // 名前があればIDは表示しない
     const meta = [b.date || null, (b.cloud!=null ? `雲量: ${formatNumber(b.cloud,1)}%` : null)].filter(Boolean).join(' · ');
-    return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
-      <div style="min-width: 360px;">
-        <div style="font-family:monospace;">${label}</div>
-        ${meta ? `<div style=\"font-size:12px;color:#666;\">${meta}</div>` : ''}
+    const ts = Date.now();
+    const imgSrc = `/api/s2/preview.png?field_id=${encodeURIComponent(b.id)}&size=512&_=${ts}`;
+    return `<div style="display:flex;align-items:center;gap:12px;margin:12px 0;">
+      <img src="${imgSrc}" alt="NDVI preview" style="width:160px;height:160px;object-fit:contain;border:1px solid #eee;border-radius:6px;"/>
+      <div style="flex:1;display:flex;align-items:center;gap:8px;">
+        <div style="min-width: 360px;">
+          <div style="font-family:monospace;">${label}</div>
+          ${meta ? `<div style=\"font-size:12px;color:#666;\">${meta}</div>` : ''}
+        </div>
+        <div style="background:#eee;width:320px;height:10px;position:relative;">
+          <div style="background:${color};height:10px;width:${w}px;"></div>
+        </div>
+        <span style="font-family:monospace;">${formatNumber(b.mean)}</span>
       </div>
-      <div style="background:#eee;width:320px;height:10px;position:relative;">
-        <div style="background:${color};height:10px;width:${w}px;"></div>
-      </div>
-      <span style="font-family:monospace;">${formatNumber(b.mean)}</span>
     </div>`;
   }).join('\n');
 
