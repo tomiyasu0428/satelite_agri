@@ -63,6 +63,18 @@ function formatNumber(value, digits = 3) {
   return Number(value).toFixed(digits);
 }
 
+function formatDate(val) {
+  if (!val) return '';
+  try {
+    const d = (val instanceof Date) ? val : new Date(val);
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const da = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${da}`;
+  } catch { return ''; }
+}
+
 async function fetchLatestNdviByField(db) {
   const coll = db.collection('s2_ndvi_timeseries');
   // 各圃場で最新日時の1件を取得（item.datetime または datetime のどちらでも対応）
@@ -135,15 +147,25 @@ function toHtml(rows) {
   // シンプルなインライン棒グラフ（mean のみ）
   const bars = rows.map(raw => {
     const r = normalizeDoc(raw);
-    return { id: r.field_id, name: r.field_name || '', mean: Number(r.ndvi?.mean ?? 0) };
+    return {
+      id: r.field_id,
+      name: r.field_name || '',
+      mean: Number(r.ndvi?.mean ?? 0),
+      date: r.item?.datetime ? formatDate(r.item.datetime) : '',
+      cloud: r.item?.cloud_cover ?? null
+    };
   });
   const max = Math.max(0.0001, ...bars.map(b => Math.abs(b.mean)));
   const items = bars.map(b => {
     const w = Math.round((Math.abs(b.mean) / max) * 300);
     const color = b.mean >= 0.4 ? '#2e7d32' : b.mean >= 0.2 ? '#f9a825' : '#e53935';
-    const label = b.name ? `${b.name} (${b.id})` : b.id;
+    const label = b.name || b.id; // 名前があればIDは表示しない
+    const meta = [b.date || null, (b.cloud!=null ? `雲量: ${formatNumber(b.cloud,1)}%` : null)].filter(Boolean).join(' · ');
     return `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
-      <code style="min-width: 320px;">${label}</code>
+      <div style="min-width: 360px;">
+        <div style="font-family:monospace;">${label}</div>
+        ${meta ? `<div style=\"font-size:12px;color:#666;\">${meta}</div>` : ''}
+      </div>
       <div style="background:#eee;width:320px;height:10px;position:relative;">
         <div style="background:${color};height:10px;width:${w}px;"></div>
       </div>
